@@ -149,40 +149,40 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
         PoolKey memory key,
         IPoolManager.ModifyLiquidityParams memory params,
         bytes calldata hookData
-    ) external onlyWhenUnlocked noDelegateCall returns (BalanceDelta callerDelta, BalanceDelta feesAccrued) {
-        PoolId id = key.toId();
+    ) external onlyWhenUnlocked noDelegateCall returns (BalanceDelta callerDelta, BalanceDelta feesAccrued) {   //@note reture callerDelta (include feesAccrued), feesAccrued
+        PoolId id = key.toId(); //@note  PoolId | Returns value equal to keccak256(abi.encode(poolKey))
         {
-            Pool.State storage pool = _getPool(id);
-            pool.checkPoolInitialized();
-
-            key.hooks.beforeModifyLiquidity(key, params, hookData);
+            Pool.State storage pool = _getPool(id); // <=> _pools[id]
+            pool.checkPoolInitialized();    //@note self.slot0.sqrtPriceX96() == 0 -> revert (not set sqrtPriceX96)
+            //@note check ADD/REMOVE by params.liquidityDelta -> add(+) / remove(-)
+            key.hooks.beforeModifyLiquidity(key, params, hookData); //@note  Hooks | (msg.sedner == key.hooks) ? skip body, return() : ( _hook()_ has permission ? callHook() -> call to f() in Hook : return() )
 
             BalanceDelta principalDelta;
-            (principalDelta, feesAccrued) = pool.modifyLiquidity(
+            (principalDelta, feesAccrued) = pool/** Pool.State */.modifyLiquidity(  // Pool | update tick and owner's position | calcualte Fee and Amount Require for modity with the given liquidityDelta
                 Pool.ModifyLiquidityParams({
-                    owner: msg.sender,
+                    owner: msg.sender,  //@note SENDER (The contrac that process the unlockCalldata())
                     tickLower: params.tickLower,
                     tickUpper: params.tickUpper,
-                    liquidityDelta: params.liquidityDelta.toInt128(),
+                    liquidityDelta: params.liquidityDelta.toInt128(),   //@note liquidity to add(+) / remove(-)
                     tickSpacing: key.tickSpacing,
                     salt: params.salt
                 })
             );
 
             // fee delta and principal delta are both accrued to the caller
-            callerDelta = principalDelta + feesAccrued;
+            callerDelta = principalDelta + feesAccrued; //@note ALL Delta that caller HAVE To Cover
         }
 
         // event is emitted before the afterModifyLiquidity call to ensure events are always emitted in order
         emit ModifyLiquidity(id, msg.sender, params.tickLower, params.tickUpper, params.liquidityDelta, params.salt);
 
         BalanceDelta hookDelta;
-        (callerDelta, hookDelta) = key.hooks.afterModifyLiquidity(key, params, callerDelta, feesAccrued, hookData);
-
+        (callerDelta, hookDelta) = key.hooks.afterModifyLiquidity(key, params, callerDelta, feesAccrued, hookData); //@note  Hooks | (msg.sedner == key.hooks) ? return (callerDelta, BalanceDeltaLibrary.ZERO_DELTA) : update callerDelta if has hookDelta -> (callerDelta (subtracted by hookDelta), HookDelta)
+        //@note in afterModifyLiquidity() check delta (modify with-in Hook process)
         // if the hook doesnt have the flag to be able to return deltas, hookDelta will always be 0
         if (hookDelta != BalanceDeltaLibrary.ZERO_DELTA) _accountPoolBalanceDelta(key, hookDelta, address(key.hooks));
 
-        _accountPoolBalanceDelta(key, callerDelta, msg.sender);
+        _accountPoolBalanceDelta(key, callerDelta, msg.sender); //@note NonzeroDeltaCount, it is global count even thee change in each currentcy, it also update this if they have change (decrease when to 0, increase when from 0)
     }
 
     /// @inheritdoc IPoolManager

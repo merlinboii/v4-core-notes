@@ -227,7 +227,7 @@ library Hooks {
                         abi.encodeCall(
                             IHooks.afterAddLiquidity, (msg.sender, key, params, delta, feesAccrued, hookData)
                         ),
-                        self.hasPermission(AFTER_ADD_LIQUIDITY_RETURNS_DELTA_FLAG)
+                        self.hasPermission(AFTER_ADD_LIQUIDITY_RETURNS_DELTA_FLAG)  //@note if FALSE this will return 0
                     )
                 );
                 callerDelta = callerDelta - hookDelta;
@@ -239,7 +239,7 @@ library Hooks {
                         abi.encodeCall(
                             IHooks.afterRemoveLiquidity, (msg.sender, key, params, delta, feesAccrued, hookData)
                         ),
-                        self.hasPermission(AFTER_REMOVE_LIQUIDITY_RETURNS_DELTA_FLAG)
+                        self.hasPermission(AFTER_REMOVE_LIQUIDITY_RETURNS_DELTA_FLAG)   //@note if FALSE this will return 0
                     )
                 );
                 callerDelta = callerDelta - hookDelta;
