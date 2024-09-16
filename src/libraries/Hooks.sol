@@ -80,7 +80,7 @@ library Hooks {
     /// the deployed hooks address causes the intended hooks to be called
     /// @param permissions The hooks that are intended to be called
     /// @dev permissions param is memory as the function will be called from constructors
-    function validateHookPermissions(IHooks self, Permissions memory permissions) internal pure {
+    function validateHookPermissions(IHooks self, Permissions memory permissions) internal pure {   //@note If inherit v4-periphery BaseHook.sol -> will check in constructor() -> if not MUST Checks!
         if (
             permissions.beforeInitialize != self.hasPermission(BEFORE_INITIALIZE_FLAG)
                 || permissions.afterInitialize != self.hasPermission(AFTER_INITIALIZE_FLAG)
@@ -122,8 +122,8 @@ library Hooks {
         // If there is no hook contract set, then fee cannot be dynamic
         // If a hook contract is set, it must have at least 1 flag set, or have a dynamic fee
         return address(self) == address(0)
-            ? !fee.isDynamicFee()
-            : (uint160(address(self)) & ALL_HOOK_MASK > 0 || fee.isDynamicFee());
+            ? !fee.isDynamicFee()   //@note if no Hook -> dynamic fee not allow
+            : (uint160(address(self)) & ALL_HOOK_MASK > 0 || fee.isDynamicFee()); //@note checks if the contract has at least one valid permission flag set `(uint160(address(self)) & ALL_HOOK_MASK > 0)` or if the fee is dynamic
     }
 
     /// @notice performs a hook call using the given calldata on the given hook that doesnt return a delta
@@ -151,7 +151,7 @@ library Hooks {
         // Length must be at least 32 to contain the selector. Check expected selector and returned selector match.
         if (result.length < 32 || result.parseSelector() != data.parseSelector()) {
             InvalidHookResponse.selector.revertWith();
-        }
+        }   //@note result.length < 32 = result is not the selector (4bytes -> 32 bits)
     }
 
     /// @notice performs a hook call using the given calldata on the given hook
@@ -181,7 +181,7 @@ library Hooks {
     {
         if (self.hasPermission(BEFORE_INITIALIZE_FLAG)) {
             self.callHook(abi.encodeCall(IHooks.beforeInitialize, (msg.sender, key, sqrtPriceX96, hookData)));
-        }
+        }   //@note Hooks lib -> callHook()
     }
 
     /// @notice calls afterInitialize hook if permissioned and validates return value

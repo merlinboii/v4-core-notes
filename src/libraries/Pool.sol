@@ -99,11 +99,11 @@ library Pool {
         returns (int24 tick)
     {
         if (self.slot0.sqrtPriceX96() != 0) PoolAlreadyInitialized.selector.revertWith();
-
-        tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);
-
+        //@note return tick The highest tick for which the price is less than or equal to the input price ( nearest sqrtPriceX96() 0 -> sqrtPriceX96)
+        tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);   //@note -> tick = tickLow == tickHi ? tickLow : getSqrtPriceAtTick(tickHi) <= sqrtPriceX96 ? tickHi : tickLow;
+        //@note packed ito slot0
         self.slot0 = Slot0.wrap(bytes32(0)).setSqrtPriceX96(sqrtPriceX96).setTick(tick).setProtocolFee(protocolFee)
-            .setLpFee(lpFee);
+            .setLpFee(lpFee);   //@note (160: 20) + (24: 3) + (24: 3) + (24: 3) =  29 -> with padding 3 bytes (29 + 3 = 32)
     }
 
     function setProtocolFee(State storage self, uint24 protocolFee) internal {

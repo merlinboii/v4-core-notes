@@ -125,18 +125,19 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
                 Currency.unwrap(key.currency0), Currency.unwrap(key.currency1)
             );
         }
+        //@note Hooks -> validate the hook permission valid relationship and related fee type allows
         if (!key.hooks.isValidHookAddress(key.fee)) Hooks.HookAddressNotValid.selector.revertWith(address(key.hooks));
 
-        uint24 lpFee = key.fee.getInitialLPFee();
+        uint24 lpFee = key.fee.getInitialLPFee();   //@note  LPFeeLibrary | if DYNAMIC_FEE ? 0 : (fee <= MAX_LP_FEE ? fee : revert());
 
-        key.hooks.beforeInitialize(key, sqrtPriceX96, hookData);
+        key.hooks.beforeInitialize(key, sqrtPriceX96, hookData);    //@note  Hooks | (msg.sedner == key.hooks) ? skip body, return() : ( _hook()_ has permission ? callHook() -> call to f() in Hook : return() )
 
-        PoolId id = key.toId();
-        uint24 protocolFee = _fetchProtocolFee(key);
+        PoolId id = key.toId(); //@note  PoolId | Returns value equal to keccak256(abi.encode(poolKey))
+        (, uint24 protocolFee) = _fetchProtocolFee(key);    //@note  ProtocolFee | fetch fee from external `protocolFeeController()` -> if not set return 0 -> fetch by key (set in the ProtocolFeeController contract)
+        //@note not checking the return data is success or not
+        tick = _pools[id].initialize(sqrtPriceX96, protocolFee, lpFee); //@note (Pool.State).initialize() -> Pool | not allow sqrtPriceX96 == 0
 
-        tick = _pools[id].initialize(sqrtPriceX96, protocolFee, lpFee);
-
-        key.hooks.afterInitialize(key, sqrtPriceX96, tick, hookData);
+        key.hooks.afterInitialize(key, sqrtPriceX96, tick, hookData);   //@note  Hooks | (msg.sedner == key.hooks) ? skip body, return() : ( _hook()_ has permission ? callHook() -> call to f() in Hook : return() )
 
         // emit all details of a pool key. poolkeys are not saved in storage and must always be provided by the caller
         // the key's fee may be a static fee or a sentinel to denote a dynamic fee.
