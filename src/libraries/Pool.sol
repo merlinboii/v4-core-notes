@@ -280,12 +280,12 @@ library Pool {
         internal
         returns (BalanceDelta swapDelta, uint256 amountToProtocol, uint24 swapFee, SwapResult memory result)
     {
-        Slot0 slot0Start = self.slot0;
+        Slot0 slot0Start = self.slot0;  //@note get slot0 -> bytes32 packed of (sqrtPriceX96 | tick | protocolFee | lpFee)
         bool zeroForOne = params.zeroForOne;
 
-        uint256 protocolFee =
-            zeroForOne ? slot0Start.protocolFee().getZeroForOneFee() : slot0Start.protocolFee().getOneForZeroFee();
-
+        uint256 protocolFee =   //@note percentage -> the return is unit16
+            zeroForOne ? slot0Start.protocolFee().getZeroForOneFee() : slot0Start.protocolFee().getOneForZeroFee(); //@note ProtocolFeeLibrary | get fee (pips) of swap side
+        //@note initiation Pool current states
         // the amount remaining to be swapped in/out of the input/output asset. initially set to the amountSpecified
         int256 amountSpecifiedRemaining = params.amountSpecified;
         // the amount swapped out/in of the output/input asset. initially set to 0
@@ -298,40 +298,39 @@ library Pool {
         result.liquidity = self.liquidity;
 
         // if the beforeSwap hook returned a valid fee override, use that as the LP fee, otherwise load from storage
-        // lpFee, swapFee, and protocolFee are all in pips
+        // lpFee, swapFee, and protocolFee are all in pips /@note -> percentage
         {
             uint24 lpFee = params.lpFeeOverride.isOverride()
-                ? params.lpFeeOverride.removeOverrideFlagAndValidate()
+                ? params.lpFeeOverride.removeOverrideFlagAndValidate()  //@note LPFeeLibrary | if override in hook (beforeSwap)
                 : slot0Start.lpFee();
-
-            swapFee = protocolFee == 0 ? lpFee : uint16(protocolFee).calculateSwapFee(lpFee);
+            //@note ProtocolFeeLibrary
+            swapFee = protocolFee == 0 ? lpFee /** only charge for hook */ : uint16(protocolFee).calculateSwapFee(lpFee);   /** charge protocol fee (taken from the input amount) then if remain charge lpFee */
         }
 
         // a swap fee totaling MAX_SWAP_FEE (100%) makes exact output swaps impossible since the input is entirely consumed by the fee
         if (swapFee >= SwapMath.MAX_SWAP_FEE) {
             // if exactOutput
-            if (params.amountSpecified > 0) {
-                InvalidFeeForExactOut.selector.revertWith();
+            if (params.amountSpecified > 0) {   //@note as they cannot provide the exact output -> amountIn will be charged fee => 100%
             }
         }
 
         // swapFee is the pool's fee in pips (LP fee + protocol fee)
         // when the amount swapped is 0, there is no protocolFee applied and the fee amount paid to the protocol is set to 0
-        if (params.amountSpecified == 0) return (BalanceDeltaLibrary.ZERO_DELTA, 0, swapFee, result);
+        if (params.amountSpecified == 0) return (BalanceDeltaLibrary.ZERO_DELTA, 0/**a mountToProtocol */, swapFee, result);
 
-        if (zeroForOne) {
-            if (params.sqrtPriceLimitX96 >= slot0Start.sqrtPriceX96()) {
+        if (zeroForOne) {   //@note currency0 -> currency1 | currency0 (+),currency1 (-) so currency1(-)/currency0 (+) -> reduce the price
+            if (params.sqrtPriceLimitX96 >= slot0Start.sqrtPriceX96()) {    //@note as aims to reduce the price -> so the sqrtPriceX96 should decrease, if sqrtPriceLimitX96 >= sqrtPriceX96 it always exceed -> sqrtPriceLimitX96 >= sqrtPriceX96 > sqrtPriceX96(afer) (sqrtPriceLimitX96 always higher than the sqrtPriceX96(afer))
                 PriceLimitAlreadyExceeded.selector.revertWith(slot0Start.sqrtPriceX96(), params.sqrtPriceLimitX96);
-            }
+            }   //@note as reduce the price -> so the sqrtPriceX96 should decrease, if sqrtPriceLimitX96 >= sqrtPriceX96 it always exceed -> sqrtPriceLimitX96 >= sqrtPriceX96 > sqrtPriceX96(afer) (sqrtPriceLimitX96 always higher than the sqrtPriceX96(afer))
             // Swaps can never occur at MIN_TICK, only at MIN_TICK + 1, except at initialization of a pool
             // Under certain circumstances outlined below, the tick will preemptively reach MIN_TICK without swapping there
             if (params.sqrtPriceLimitX96 <= TickMath.MIN_SQRT_PRICE) {
                 PriceLimitOutOfBounds.selector.revertWith(params.sqrtPriceLimitX96);
             }
-        } else {
-            if (params.sqrtPriceLimitX96 <= slot0Start.sqrtPriceX96()) {
+        } else {    //@note zeroForOne: false -> oneForZero //@note currency1 -> currency0 | currency1 (+),currency0 (-) so currency1(+)/currency0 (-) -> incrase the price
+            if (params.sqrtPriceLimitX96 <= slot0Start.sqrtPriceX96()) {    
                 PriceLimitAlreadyExceeded.selector.revertWith(slot0Start.sqrtPriceX96(), params.sqrtPriceLimitX96);
-            }
+            }   //@note as increase the price -> so the sqrtPriceX96 should increase, if sqrtPriceLimitX96 <= sqrtPriceX96 it always exceed -> sqrtPriceLimitX96 <= sqrtPriceX96 < sqrtPriceX96(afer) (sqrtPriceLimitX96 always lower than the sqrtPriceX96(afer))
             if (params.sqrtPriceLimitX96 >= TickMath.MAX_SQRT_PRICE) {
                 PriceLimitOutOfBounds.selector.revertWith(params.sqrtPriceLimitX96);
             }
@@ -340,12 +339,12 @@ library Pool {
         StepComputations memory step;
         step.feeGrowthGlobalX128 = zeroForOne ? self.feeGrowthGlobal0X128 : self.feeGrowthGlobal1X128;
 
-        // continue swapping as long as we haven't used the entire input/output and haven't reached the price limit
+        // continue swapping as long as we haven't used the entire input/output !AND! haven't reached the price limit
         while (!(amountSpecifiedRemaining == 0 || result.sqrtPriceX96 == params.sqrtPriceLimitX96)) {
             step.sqrtPriceStartX96 = result.sqrtPriceX96;
 
-            (step.tickNext, step.initialized) =
-                self.tickBitmap.nextInitializedTickWithinOneWord(result.tick, params.tickSpacing, zeroForOne);
+            (step.tickNext, step.initialized) = //@note TickBitmap | get the next nearest of the tick (based on what swap side)
+                self.tickBitmap.nextInitializedTickWithinOneWord(result.tick, params.tickSpacing, zeroForOne/**lte -> search tick to the left(TRUE -> price decrease)/right(False -> price increase) */);
 
             // ensure that we do not overshoot the min/max tick, as the tick bitmap is not aware of these bounds
             if (step.tickNext <= TickMath.MIN_TICK) {
@@ -359,9 +358,9 @@ library Pool {
             step.sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(step.tickNext);
 
             // compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
-            (result.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(
+            (result.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(    //@note calculate the nextPrice, amountIn (not included fee) (exactIn -> subtracted fee from exactIn provide | exactOut -> cal fee with (amountIn + fee charge) | Out, feeAmount (in term of amountIn)
                 result.sqrtPriceX96,
-                SwapMath.getSqrtPriceTarget(zeroForOne, step.sqrtPriceNextX96, params.sqrtPriceLimitX96),
+                SwapMath.getSqrtPriceTarget(zeroForOne, step.sqrtPriceNextX96, params.sqrtPriceLimitX96),   //@note sqrtPriceTargetX96
                 result.liquidity,
                 amountSpecifiedRemaining,
                 swapFee
@@ -370,15 +369,15 @@ library Pool {
             // if exactOutput
             if (params.amountSpecified > 0) {
                 unchecked {
-                    amountSpecifiedRemaining -= step.amountOut.toInt256();
+                    amountSpecifiedRemaining -= step.amountOut.toInt256();  //@note amountOut term
                 }
-                amountCalculated -= (step.amountIn + step.feeAmount).toInt256();
-            } else {
+                amountCalculated -= (step.amountIn + step.feeAmount).toInt256();    //@note amountIn term (with fee)
+            } else {    //@note if exactInput ( < 0)
                 // safe because we test that amountSpecified > amountIn + feeAmount in SwapMath
                 unchecked {
-                    amountSpecifiedRemaining += (step.amountIn + step.feeAmount).toInt256();
+                    amountSpecifiedRemaining += (step.amountIn + step.feeAmount).toInt256();    //@note amountIn term (with fee)
                 }
-                amountCalculated += step.amountOut.toInt256();
+                amountCalculated += step.amountOut.toInt256();  //@note amountOut term
             }
 
             // if the protocol fee is on, calculate how much is owed, decrement feeAmount, and increment protocolFee
@@ -389,7 +388,7 @@ library Pool {
                     // this line cannot overflow due to limits on the size of protocolFee and params.amountSpecified
                     uint256 delta = (step.amountIn + step.feeAmount) * protocolFee / ProtocolFeeLibrary.PIPS_DENOMINATOR;
                     // subtract it from the total fee and add it to the protocol fee
-                    step.feeAmount -= delta;
+                    step.feeAmount -= delta;    //@note subtract swapFee for protocolFee from the returned feeAmount (in term of amountIn)
                     amountToProtocol += delta;
                 }
             }
@@ -407,7 +406,7 @@ library Pool {
             // If the swap doesnt continue (if amountRemaining == 0 or sqrtPriceLimit is met), slot0.tick will be 1 less
             // than getTickAtSqrtPrice(slot0.sqrtPrice). This doesn't affect swaps, but donation calls should verify both
             // price and tick to reward the correct LPs.
-            if (result.sqrtPriceX96 == step.sqrtPriceNextX96) {
+            if (result.sqrtPriceX96 /** the returned nextPrice */ == step.sqrtPriceNextX96) {
                 // if the tick is initialized, run the tick transition
                 if (step.initialized) {
                     (uint256 feeGrowthGlobal0X128, uint256 feeGrowthGlobal1X128) = zeroForOne
@@ -421,39 +420,39 @@ library Pool {
                         if (zeroForOne) liquidityNet = -liquidityNet;
                     }
 
-                    result.liquidity = LiquidityMath.addDelta(result.liquidity, liquidityNet);
+                    result.liquidity = LiquidityMath.addDelta(result.liquidity, liquidityNet);  //@note add int to uint
                 }
 
-                unchecked {
+                unchecked { //@note 0 -> 1: moving to a lower tick because the price is decreasing 
                     result.tick = zeroForOne ? step.tickNext - 1 : step.tickNext;
-                }
-            } else if (result.sqrtPriceX96 != step.sqrtPriceStartX96) {
+                }   //@note 1 -> 0: moving to a higher tick because the price is increasing 
+            } else if (result.sqrtPriceX96 != step.sqrtPriceStartX96) { //@note tick move to the returned next tick so recompute the tick
                 // recompute unless we're on a lower tick boundary (i.e. already transitioned ticks), and haven't moved
                 result.tick = TickMath.getTickAtSqrtPrice(result.sqrtPriceX96);
             }
         }
 
-        self.slot0 = slot0Start.setTick(result.tick).setSqrtPriceX96(result.sqrtPriceX96);
+        self.slot0 = slot0Start.setTick(result.tick).setSqrtPriceX96(result.sqrtPriceX96);  //@note update slot0
 
         // update liquidity if it changed
         if (self.liquidity != result.liquidity) self.liquidity = result.liquidity;
 
         // update fee growth global
         if (!zeroForOne) {
-            self.feeGrowthGlobal1X128 = step.feeGrowthGlobalX128;
+            self.feeGrowthGlobal1X128 = step.feeGrowthGlobalX128;   //@note 1 -> 0: fee updates at input (1)
         } else {
-            self.feeGrowthGlobal0X128 = step.feeGrowthGlobalX128;
+            self.feeGrowthGlobal0X128 = step.feeGrowthGlobalX128;   //@note 0 -> 1: fee updates at input (0)
         }
 
         unchecked {
             // "if currency1 is specified"
-            if (zeroForOne != (params.amountSpecified < 0)) {
+            if (zeroForOne != (params.amountSpecified < 0)) {   //@note 1 is specified
                 swapDelta = toBalanceDelta(
-                    amountCalculated.toInt128(), (params.amountSpecified - amountSpecifiedRemaining).toInt128()
+                    amountCalculated.toInt128() /** delta0 */, (params.amountSpecified - amountSpecifiedRemaining).toInt128() /** delta1 */
                 );
-            } else {
+            } else {    //@note 0 is specified
                 swapDelta = toBalanceDelta(
-                    (params.amountSpecified - amountSpecifiedRemaining).toInt128(), amountCalculated.toInt128()
+                    (params.amountSpecified - amountSpecifiedRemaining).toInt128()  /** delta0 */ , amountCalculated.toInt128() /** delta1 */
                 );
             }
         }

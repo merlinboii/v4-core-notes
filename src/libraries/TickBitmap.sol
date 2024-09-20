@@ -82,28 +82,28 @@ library TickBitmap {
     /// @param lte Whether to search for the next initialized tick to the left (less than or equal to the starting tick)
     /// @return next The next initialized or uninitialized tick up to 256 ticks away from the current tick
     /// @return initialized Whether the next tick is initialized, as the function only searches within up to 256 ticks
-    function nextInitializedTickWithinOneWord(
+    function nextInitializedTickWithinOneWord(  //@note visualize src: https://www.youtube.com/watch?v=g3O_7-aImw4&list=PLO5VPQH6OWdXp2_Nk8U7V-zh7suI05i0E&index=24
         mapping(int16 => uint256) storage self,
         int24 tick,
         int24 tickSpacing,
         bool lte
     ) internal view returns (int24 next, bool initialized) {
         unchecked {
-            int24 compressed = compress(tick, tickSpacing);
+            int24 compressed = compress(tick, tickSpacing); //@note tick: wordPos|bitPos
 
-            if (lte) {
+            if (lte) {  //@note zeroForOne
                 (int16 wordPos, uint8 bitPos) = position(compressed);
-                // all the 1s at or to the right of the current bitPos
-                uint256 mask = type(uint256).max >> (uint256(type(uint8).max) - bitPos);
-                uint256 masked = self[wordPos] & mask;
+                // all the 1s at or to the right of the current bitPos  //@note ie bitPos = 7 -> 0000111 -> shift value = 111..(256 bits)..111 - 0000111 = 111...(256 bits)...1111000 (2^256-7) -> 111...(256)...111 bits >> 2^(2^256-7)
+                uint256 mask = type(uint256).max >> (uint256(type(uint8).max) - bitPos);    //@note mask by shift right all 2^256-2^8(max of bitPos) to remain only 1 for lests bitPos bits -> 000..(256-7bits)..1111111(7 bits)
+                uint256 masked = self[wordPos]/**slot mapping length = 256 at the wordPos in tickBitMap */ & mask;  //@note find the 1 bits that remain af the right of the tick
 
                 // if there are no initialized ticks to the right of or at the current tick, return rightmost in the word
                 initialized = masked != 0;
                 // overflow/underflow is possible, but prevented externally by limiting both tickSpacing and tick
                 next = initialized
-                    ? (compressed - int24(uint24(bitPos - BitMath.mostSignificantBit(masked)))) * tickSpacing
-                    : (compressed - int24(uint24(bitPos))) * tickSpacing;
-            } else {
+                    ? (compressed - int24(uint24(bitPos - BitMath.mostSignificantBit(masked)/**find MOST significant at the right (nearest the bitPosIndex (from right)) */))) * tickSpacing //@note Tick (wordPos|bitPos) - prev(bitPos) + next(bitPos)
+                    : (compressed - int24(uint24(bitPos))) * tickSpacing;   //@note masked == 0
+            } else {    //@note oneForZero  -> do similar to lte=true just use mask for the left and get least significant at the left (nearest the bitPosIndex (from left))
                 // start from the word of the next tick, since the current tick state doesn't matter
                 (int16 wordPos, uint8 bitPos) = position(++compressed);
                 // all the 1s at or to the left of the bitPos

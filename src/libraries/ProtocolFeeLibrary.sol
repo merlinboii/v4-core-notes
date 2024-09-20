@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 /// @notice library of functions related to protocol fees
 library ProtocolFeeLibrary {
-    /// @notice Max protocol fee is 0.1% (1000 pips)
+    /// @notice Max protocol fee is 0.1% (1000 pips)    //@note 1% -> 10000 | 100% -> 1_000_000
     /// @dev Increasing these values could lead to overflow in Pool.swap
     uint16 public constant MAX_PROTOCOL_FEE = 1000;
 
@@ -14,12 +14,12 @@ library ProtocolFeeLibrary {
     /// @notice the protocol fee is represented in hundredths of a bip
     uint256 internal constant PIPS_DENOMINATOR = 1_000_000;
 
-    function getZeroForOneFee(uint24 self) internal pure returns (uint16) {
-        return uint16(self & 0xfff);
+    function getZeroForOneFee(uint24 self) internal pure returns (uint16) { //@note percentage
+        return uint16(self & 0xfff);    //@note to get Lower 12 bits of the unit24 -> `self & 0000 1111 1111 1111`
     }
 
-    function getOneForZeroFee(uint24 self) internal pure returns (uint16) {
-        return uint16(self >> 12);
+    function getOneForZeroFee(uint24 self) internal pure returns (uint16) { //@note percentage
+        return uint16(self >> 12);  //@note to get Upper 12 bits of the unit24 -> `self (shift rigth ->) 12 bits`
     }
 
     function isValidProtocolFee(uint24 self) internal pure returns (bool valid) {
@@ -32,11 +32,11 @@ library ProtocolFeeLibrary {
     }
 
     // The protocol fee is taken from the input amount first and then the LP fee is taken from the remaining
-    // The swap fee is capped at 100%
+    // The swap fee is capped at 100% -> //@note 1_000_000
     // Equivalent to protocolFee + lpFee(1_000_000 - protocolFee) / 1_000_000
     /// @dev here `self` is just a single direction's protocol fee, not a packed type of 2 protocol fees
     function calculateSwapFee(uint16 self, uint24 lpFee) internal pure returns (uint24 swapFee) {
-        // protocolFee + lpFee - (protocolFee * lpFee / 1_000_000). Div rounds up to favor LPs over the protocol.
+        // protocolFee + lpFee - (protocolFee * lpFee / 1_000_000)  //@note remove double counting adjustment. Div rounds up to favor LPs over the protocol.
         assembly ("memory-safe") {
             self := and(self, 0xfff)
             lpFee := and(lpFee, 0xffffff)

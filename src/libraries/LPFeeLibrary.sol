@@ -19,7 +19,7 @@ library LPFeeLibrary {
     uint24 public constant OVERRIDE_FEE_FLAG = 0x400000;
 
     /// @notice mask to remove the override fee flag from a fee returned by the beforeSwaphook
-    uint24 public constant REMOVE_OVERRIDE_MASK = 0xBFFFFF;
+    uint24 public constant REMOVE_OVERRIDE_MASK = 0xBFFFFF; //@note 10111111_11111111_11111111
 
     /// @notice the lp fee is represented in hundredths of a bip, so the max is 100%
     uint24 public constant MAX_LP_FEE = 1000000;
@@ -35,7 +35,7 @@ library LPFeeLibrary {
     /// @param self The fee to check
     /// @return bool True of the fee is valid
     function isValid(uint24 self) internal pure returns (bool) {
-        return self <= MAX_LP_FEE;
+        return self <= MAX_LP_FEE;  //@note MAX_LP_FEE: 1000000
     }
 
     /// @notice validates whether an LP fee is larger than the maximum, and reverts if invalid
@@ -66,7 +66,7 @@ library LPFeeLibrary {
     /// @param self The fee to remove the override flag from
     /// @return fee The fee without the override flag set
     function removeOverrideFlag(uint24 self) internal pure returns (uint24) {
-        return self & REMOVE_OVERRIDE_MASK;
+        return self & REMOVE_OVERRIDE_MASK; //@note CLEAR a specific flag located at the 22nd bit position.
     }
 
     /// @notice Removes the override flag and validates the fee (reverts if the fee is too large)

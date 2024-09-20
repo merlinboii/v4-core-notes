@@ -199,33 +199,33 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
 
         BeforeSwapDelta beforeSwapDelta;
         {
-            int256 amountToSwap;
+            int256 amountToSwap;    //@note amountSpecified that is modifide if hook has delta
             uint24 lpFeeOverride;
-            (amountToSwap, beforeSwapDelta, lpFeeOverride) = key.hooks.beforeSwap(key, params, hookData);
+            (amountToSwap, beforeSwapDelta, lpFeeOverride) = key.hooks.beforeSwap(key, params, hookData);   //@follow-up
 
             // execute swap, account protocol fees, and emit swap event
             // _swap is needed to avoid stack too deep error
-            swapDelta = _swap(
-                pool,
-                id,
+            swapDelta = _swap(  // PoolManager._swap() -> return the BalanceDelta
+                pool,   //@note Pool.State
+                id, //@note key.toId(); -> keccak256(abi.encode(poolKey))
                 Pool.SwapParams({
                     tickSpacing: key.tickSpacing,
                     zeroForOne: params.zeroForOne,
-                    amountSpecified: amountToSwap,
+                    amountSpecified: amountToSwap,  //@note (+) exact amountOut, (-) exact amountIn
                     sqrtPriceLimitX96: params.sqrtPriceLimitX96,
                     lpFeeOverride: lpFeeOverride
                 }),
-                params.zeroForOne ? key.currency0 : key.currency1 // input token
+                params.zeroForOne ? key.currency0 : key.currency1 //@note input token
             );
         }
 
         BalanceDelta hookDelta;
-        (swapDelta, hookDelta) = key.hooks.afterSwap(key, params, swapDelta, hookData, beforeSwapDelta);
+        (swapDelta, hookDelta) = key.hooks.afterSwap(key, params, swapDelta, hookData, beforeSwapDelta);    //@follow-up
 
         // if the hook doesnt have the flag to be able to return deltas, hookDelta will always be 0
         if (hookDelta != BalanceDeltaLibrary.ZERO_DELTA) _accountPoolBalanceDelta(key, hookDelta, address(key.hooks));
 
-        _accountPoolBalanceDelta(key, swapDelta, msg.sender);
+        _accountPoolBalanceDelta(key, swapDelta, msg.sender);   //@note NonzeroDeltaCount, it is global count even thee change in each currentcy, it also update this if they have change (decrease when to 0, increase when from 0)
     }
 
     /// @notice Internal swap function to execute a swap, take protocol fees on input token, and emit the swap event
@@ -234,10 +234,10 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
         returns (BalanceDelta)
     {
         (BalanceDelta delta, uint256 amountToProtocol, uint24 swapFee, Pool.SwapResult memory result) =
-            pool.swap(params);
+            pool.swap(params);  //@note Pool | modify Pool.State, find the amountIn/Out delta (packed into BalanceDelta delta), amountToProtocol: fee to protocol, swapFee: % pips include protocolFee and lpFee
 
         // the fee is on the input currency
-        if (amountToProtocol > 0) _updateProtocolFees(inputCurrency, amountToProtocol);
+        if (amountToProtocol > 0) _updateProtocolFees(inputCurrency, amountToProtocol); //@note update fee in the input
 
         // event is emitted before the afterSwap call to ensure events are always emitted in order
         emit Swap(
@@ -251,7 +251,7 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
             swapFee
         );
 
-        return delta;
+        return delta;   //@note BalanceDelta
     }
 
     /// @inheritdoc IPoolManager
@@ -371,7 +371,7 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
 
         (int256 previous, int256 next) = currency.applyDelta(target, delta);
 
-        if (next == 0) {
+        if (next == 0) {    //@note incase previous !=0 next !=0 do nothing
             NonzeroDeltaCount.decrement();
         } else if (previous == 0) {
             NonzeroDeltaCount.increment();
