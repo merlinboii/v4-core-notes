@@ -292,4 +292,19 @@ contract Deployers {
 
     // to receive refunds of spare eth from test helpers
     receive() external payable {}
+
+    function initializeManagerRoutersAndPoolsWithLiqBall(IHooks hooks) internal {
+        deployFreshManagerAndRouters();
+        // sets the global currencies and key
+        deployMintAndApprove2Currencies();
+        // (key,) = initPoolAndAddLiquidity(currency0, currency1, hooks, 3000, SQRT_PRICE_1_1, ZERO_BYTES);
+        // nestedActionRouter.executor().setKey(key);
+        // (nativeKey,) = initPoolAndAddLiquidityETH(
+        //     CurrencyLibrary.ADDRESS_ZERO, currency1, hooks, 3000, SQRT_PRICE_1_1, ZERO_BYTES, 1 ether
+        // );
+        // uninitializedKey = key;
+        // uninitializedNativeKey = nativeKey;
+        // uninitializedKey.fee = 100;
+        // uninitializedNativeKey.fee = 100;
+    }
 }

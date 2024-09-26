@@ -252,8 +252,8 @@ library Hooks {
         internal
         returns (int256 amountToSwap, BeforeSwapDelta hookReturn, uint24 lpFeeOverride)
     {
-        amountToSwap = params.amountSpecified;
-        if (msg.sender == address(self)) return (amountToSwap, BeforeSwapDeltaLibrary.ZERO_DELTA, lpFeeOverride);
+        amountToSwap = params.amountSpecified;  //@note amount specified by user (not adjust but if the hook has delta, it will be adjusted)
+        if (msg.sender == address(self)) return (amountToSwap, BeforeSwapDeltaLibrary.ZERO_DELTA, lpFeeOverride);   //@note skip self call
 
         if (self.hasPermission(BEFORE_SWAP_FLAG)) {
             bytes memory result = callHook(self, abi.encodeCall(IHooks.beforeSwap, (msg.sender, key, params, hookData)));
@@ -262,20 +262,20 @@ library Hooks {
             if (result.length != 96) InvalidHookResponse.selector.revertWith();
 
             // dynamic fee pools that do not want to override the cache fee, return 0 otherwise they return a valid fee with the override flag
-            if (key.fee.isDynamicFee()) lpFeeOverride = result.parseFee();
+            if (key.fee.isDynamicFee()) lpFeeOverride = result.parseFee();  //@note dynamic fee retured from the Hook to use as a fee (not include the protocol fee, it is separated part)
 
-            // skip this logic for the case where the hook return is 0
-            if (self.hasPermission(BEFORE_SWAP_RETURNS_DELTA_FLAG)) {
+            // skip this logic for the case where the hook return is 0  //@note if Hooks design to return delta (!=0), they need to allow `BEFORE_SWAP_RETURNS_DELTA_FLAG` and also `AFTER_SWAP_RETURNS_DELTA_FLAG`
+            if (self.hasPermission(BEFORE_SWAP_RETURNS_DELTA_FLAG)) {   //@note This if{} is to modify the actual amountToSwap that Uniswap need to handle (ie,. from hook they already paid some amount of tokenIn specified from user, so the amountToSwap will be modified)
                 hookReturn = BeforeSwapDelta.wrap(result.parseReturnDelta());
 
                 // any return in unspecified is passed to the afterSwap hook for handling
-                int128 hookDeltaSpecified = hookReturn.getSpecifiedDelta();
+                int128 hookDeltaSpecified = hookReturn.getSpecifiedDelta(); //@note  hookReturn -> BeforeSwapDelta -> |--128(amountSpecified (can be amount of currentcy0/1 depens on user input))--|--128(amountUnspecified)--|
 
                 // Update the swap amount according to the hook's return, and check that the swap type doesnt change (exact input/output)
                 if (hookDeltaSpecified != 0) {
                     bool exactInput = amountToSwap < 0;
-                    amountToSwap += hookDeltaSpecified;
-                    if (exactInput ? amountToSwap > 0 : amountToSwap < 0) {
+                    amountToSwap += hookDeltaSpecified; //@note adjust here, if Hook paid for they will return the delta (- : have taken from hook) and (+: have to take more from user) 
+                    if (exactInput ? amountToSwap > 0 : amountToSwap < 0) { //@note ensure that the hook delta does not make the swap TYPE change
                         HookDeltaExceedsSwapAmount.selector.revertWith();
                     }
                 }
@@ -293,22 +293,22 @@ library Hooks {
         BeforeSwapDelta beforeSwapHookReturn
     ) internal returns (BalanceDelta, BalanceDelta) {
         if (msg.sender == address(self)) return (swapDelta, BalanceDeltaLibrary.ZERO_DELTA);
-
+        //@note get the hookReturn at `beforeSwap()`
         int128 hookDeltaSpecified = beforeSwapHookReturn.getSpecifiedDelta();
         int128 hookDeltaUnspecified = beforeSwapHookReturn.getUnspecifiedDelta();
 
-        if (self.hasPermission(AFTER_SWAP_FLAG)) {
+        if (self.hasPermission(AFTER_SWAP_FLAG)) {  //@note update the hookDeltaUnspecified
             hookDeltaUnspecified += self.callHookWithReturnDelta(
                 abi.encodeCall(IHooks.afterSwap, (msg.sender, key, params, swapDelta, hookData)),
-                self.hasPermission(AFTER_SWAP_RETURNS_DELTA_FLAG)
+                self.hasPermission(AFTER_SWAP_RETURNS_DELTA_FLAG)   //@note flag to parseReturn
             ).toInt128();
         }
 
         BalanceDelta hookDelta;
         if (hookDeltaUnspecified != 0 || hookDeltaSpecified != 0) {
-            hookDelta = (params.amountSpecified < 0 == params.zeroForOne)
-                ? toBalanceDelta(hookDeltaSpecified, hookDeltaUnspecified)
-                : toBalanceDelta(hookDeltaUnspecified, hookDeltaSpecified);
+            hookDelta = (params.amountSpecified < 0 == params.zeroForOne)   //@note update the hookDelta to use current value of SwapDelta
+                ? toBalanceDelta(hookDeltaSpecified, hookDeltaUnspecified)  //@note exact0
+                : toBalanceDelta(hookDeltaUnspecified, hookDeltaSpecified); //@note exact1
 
             // the caller has to pay for (or receive) the hook's delta
             swapDelta = swapDelta - hookDelta;

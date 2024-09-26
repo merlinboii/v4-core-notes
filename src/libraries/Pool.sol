@@ -15,6 +15,7 @@ import {ProtocolFeeLibrary} from "./ProtocolFeeLibrary.sol";
 import {LiquidityMath} from "./LiquidityMath.sol";
 import {LPFeeLibrary} from "./LPFeeLibrary.sol";
 import {CustomRevert} from "./CustomRevert.sol";
+import {console} from "forge-std/console.sol";
 
 /// @notice a library with all actions that can be performed on a pool
 library Pool {
@@ -342,7 +343,7 @@ library Pool {
         // continue swapping as long as we haven't used the entire input/output !AND! haven't reached the price limit
         while (!(amountSpecifiedRemaining == 0 || result.sqrtPriceX96 == params.sqrtPriceLimitX96)) {
             step.sqrtPriceStartX96 = result.sqrtPriceX96;
-
+            
             (step.tickNext, step.initialized) = //@note TickBitmap | get the next nearest of the tick (based on what swap side)
                 self.tickBitmap.nextInitializedTickWithinOneWord(result.tick, params.tickSpacing, zeroForOne/**lte -> search tick to the left(TRUE -> price decrease)/right(False -> price increase) */);
 
@@ -356,7 +357,7 @@ library Pool {
 
             // get the price for the next tick
             step.sqrtPriceNextX96 = TickMath.getSqrtPriceAtTick(step.tickNext);
-
+            
             // compute values to swap to the target tick, price limit, or point where input/output amount is exhausted
             (result.sqrtPriceX96, step.amountIn, step.amountOut, step.feeAmount) = SwapMath.computeSwapStep(    //@note calculate the nextPrice, amountIn (not included fee) (exactIn -> subtracted fee from exactIn provide | exactOut -> cal fee with (amountIn + fee charge) | Out, feeAmount (in term of amountIn)
                 result.sqrtPriceX96,
@@ -379,7 +380,6 @@ library Pool {
                 }
                 amountCalculated += step.amountOut.toInt256();  //@note amountOut term
             }
-
             // if the protocol fee is on, calculate how much is owed, decrement feeAmount, and increment protocolFee
             if (protocolFee > 0) {
                 unchecked {
@@ -454,6 +454,8 @@ library Pool {
                 swapDelta = toBalanceDelta(
                     (params.amountSpecified - amountSpecifiedRemaining).toInt128()  /** delta0 */ , amountCalculated.toInt128() /** delta1 */
                 );
+                console.logInt(int256(amountSpecifiedRemaining));
+
             }
         }
     }

@@ -133,7 +133,7 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
         key.hooks.beforeInitialize(key, sqrtPriceX96, hookData);    //@note  Hooks | (msg.sedner == key.hooks) ? skip body, return() : ( _hook()_ has permission ? callHook() -> call to f() in Hook : return() )
 
         PoolId id = key.toId(); //@note  PoolId | Returns value equal to keccak256(abi.encode(poolKey))
-        (, uint24 protocolFee) = _fetchProtocolFee(key);    //@note  ProtocolFee | fetch fee from external `protocolFeeController()` -> if not set return 0 -> fetch by key (set in the ProtocolFeeController contract)
+        (uint24 protocolFee) = _fetchProtocolFee(key);    //@note  ProtocolFee | fetch fee from external `protocolFeeController()` -> if not set return 0 -> fetch by key (set in the ProtocolFeeController contract)
         //@note not checking the return data is success or not
         tick = _pools[id].initialize(sqrtPriceX96, protocolFee, lpFee); //@note (Pool.State).initialize() -> Pool | not allow sqrtPriceX96 == 0
 
@@ -201,7 +201,7 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
         {
             int256 amountToSwap;    //@note amountSpecified that is modifide if hook has delta
             uint24 lpFeeOverride;
-            (amountToSwap, beforeSwapDelta, lpFeeOverride) = key.hooks.beforeSwap(key, params, hookData);   //@follow-up
+            (amountToSwap, beforeSwapDelta, lpFeeOverride) = key.hooks.beforeSwap(key, params, hookData);   //@note Hooks | beforeSwap -> get Hook fee, modify the amountToSwap (if hook return delta)
 
             // execute swap, account protocol fees, and emit swap event
             // _swap is needed to avoid stack too deep error
@@ -220,10 +220,10 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
         }
 
         BalanceDelta hookDelta;
-        (swapDelta, hookDelta) = key.hooks.afterSwap(key, params, swapDelta, hookData, beforeSwapDelta);    //@follow-up
+        (swapDelta, hookDelta) = key.hooks.afterSwap(key, params, swapDelta, hookData, beforeSwapDelta);    //@note Hooks | afterSwap -> modify the swapDelta (that user has to paid/receive) with hookDelta (if return delta)
 
         // if the hook doesnt have the flag to be able to return deltas, hookDelta will always be 0
-        if (hookDelta != BalanceDeltaLibrary.ZERO_DELTA) _accountPoolBalanceDelta(key, hookDelta, address(key.hooks));
+        if (hookDelta != BalanceDeltaLibrary.ZERO_DELTA) _accountPoolBalanceDelta(key, hookDelta, address(key.hooks));  //@note update the target(hook) balance delta -> if hook settle before (NonzeroDeltaCount++), this should be cal and reduce the NonzeroDeltaCount -> NonzeroDeltaCount-- as subtract from what value hook settled
 
         _accountPoolBalanceDelta(key, swapDelta, msg.sender);   //@note NonzeroDeltaCount, it is global count even thee change in each currentcy, it also update this if they have change (decrease when to 0, increase when from 0)
     }
